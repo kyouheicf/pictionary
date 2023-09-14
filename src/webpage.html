@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Pictionary!</title>
+    <style>
+        .center {
+            margin: auto;
+            width: 50%;
+        }
+    </style>
+</head>
+
+<body onload="init()">
+    <div class="center">
+        <h1>Pictionary!</h1>
+        <div id="join">
+            <form>
+                <label for="room">Room Name:</label><br>
+                <input type="text" id="room_input">
+            </form>
+            <button onclick="submitRoomName()">Submit</button>
+        </div>
+        <div id="guess" style="visibility: hidden;">
+            <h2>Guess what your friend is drawing!</h2>
+            <button onclick="changeMode()" id="draw_button">I WANNA DRAW!</button>
+        </div>
+        <div id="draw" style="visibility: hidden;">
+            <h2>Draw and make your friends guess the word!</h2>
+            <h2>The word is: <b id='word' style="color: chocolate;"></b></h2>
+            <button onClick="changeWord()">Next Word</button>
+        </div>
+        <br>
+        <canvas id="canvas" width="600" height="600" style="border:2px solid; visibility: hidden;"></canvas>
+    </div>
+</body>
+<script type='text/javascript'>
+    var websocket = null;
+    var isGuesser = true;
+
+    var wordList = ['Phone', 'Summer', 'Moon', 'T-Shirt', 'Pyramid', 'Beer', 'Cloud', 'Mango', 'Swimming Pool'];
+    var currentIndex = 0;
+
+    var canvas, context, flag = false,
+        prevX = 0,
+        currX = 0,
+        prevY = 0,
+        currY = 0,
+        dotFlag = false;
+    var color = "blue";
+    var thickness = 5;
+
+    function init() {
+        initCanvas();
+        changeWord();
+    }
+
+    function initCanvas() {
+        canvas = document.getElementById('canvas');
+        context = canvas.getContext("2d");
+
+        canvas.addEventListener("mousemove", function (event) {
+            sendToServer('move', event);
+        }, false);
+        canvas.addEventListener("mousedown", function (event) {
+            sendToServer('down', event);
+        }, false);
+        canvas.addEventListener("mouseup", function (event) {
+            sendToServer('up', event);
+        }, false);
+        canvas.addEventListener("mouseout", function (event) {
+            sendToServer('out', event);
+        }, false);
+    }
+
+    function changeWord() {
+        document.getElementById("word").innerHTML = wordList[currentIndex];
+        currentIndex = (currentIndex + 1) % wordList.length;
+
+        // Need to clear our own screen too
+        clearScreen();
+
+        // Tell others to clear their screens
+        if (websocket != null) {
+            websocket.send("clear");
+        }
+    }
+
+    function submitRoomName() {
+        const roomName = document.getElementById("room_input").value;
+        initWebSocket(roomName);
+
+        document.getElementById("room_input").value = "";
+
+        document.getElementById("join").style.visibility = 'hidden';
+        document.getElementById("guess").style.visibility = 'visible';
+        document.getElementById("canvas").style.visibility = 'visible';
+    }
+
+    function initWebSocket(roomName) {
+        websocket = new WebSocket("wss://pictionary.khayama.workers.dev/ws/" + roomName);
+
+        websocket.addEventListener("open", event => {
+            console.log("WebSocket connection opened!");
+        });
+
+        websocket.addEventListener("message", event => {
+            let data = event.data;
+            console.log("Received: " + data);
+
+            if (data === "clear") {
+                clearScreen();
+            } else if (data === 'drawer chosen' && isGuesser == true) {
+                document.getElementById("draw_button").remove();
+            } else {
+                const parsedData = JSON.parse(data);
+                updateCoordinates(parsedData.movement, parsedData.x, parsedData.y);
+            }
+        });
+    }
+
+    // Switch to Drawing Mode (the user draws, others guess)
+    function changeMode() {
+        isGuesser = false;
+
+        if (websocket != null) {
+            websocket.send('drawer chosen');
+        }
+
+        document.getElementById("guess").style.visibility = 'hidden';
+        document.getElementById("draw").style.visibility = 'visible';
+    }
+
+    function sendToServer(movement, event) {
+        const x = event.clientX;
+        const y = event.clientY;
+        if (websocket != null && !isGuesser) {
+            const value = {
+                movement: movement,
+                x: x,
+                y: y
+            };
+            websocket.send(JSON.stringify(value));
+        }
+    }
+
+    function updateCoordinates(movement, clientX, clientY) {
+        if (movement == 'down') {
+            prevX = currX;
+            prevY = currY;
+            currX = clientX - canvas.offsetLeft;
+            currY = clientY - canvas.offsetTop;
+
+            flag = true;
+            dotFlag = true;
+            if (dotFlag) {
+                context.beginPath();
+                context.fillStyle = color;
+                context.fillRect(currX, currY, 2, 2);
+                context.closePath();
+                dotFlag = false;
+            }
+        } else if (movement == 'up' || movement == "out") {
+            flag = false;
+        } else if (movement == 'move') {
+            if (flag) {
+                prevX = currX;
+                prevY = currY;
+                currX = clientX - canvas.offsetLeft;
+                currY = clientY - canvas.offsetTop;
+                draw();
+            }
+        }
+    }
+
+    function draw() {
+        context.beginPath();
+        context.moveTo(prevX, prevY);
+        context.lineTo(currX, currY);
+        context.strokeStyle = color;
+        context.lineWidth = thickness;
+        context.stroke();
+        context.closePath();
+    }
+
+    function clearScreen() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+</script>
+
+</html>

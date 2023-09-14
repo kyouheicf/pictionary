@@ -1,0 +1,11 @@
+name = "pictionary"
+main = "src/worker.js"
+compatibility_date = "2023-09-14"
+rules = [{type = "Data", globs = ["**/*.html"]}]
+
+[durable_objects]
+bindings = [{name = "EXAMPLE_CLASS", class_name = "ExampleClass"}]
+
+[[migrations]]
+tag = "v1" # Should be unique for each entry
+new_classes = ["ExampleClass"]
